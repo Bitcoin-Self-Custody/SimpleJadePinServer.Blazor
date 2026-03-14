@@ -15,6 +15,16 @@ public static class BcUr
     const int MaxFragmentLength = 34;
     const int MinFragmentLength = 10;
 
+    // Encodes a raw payload into a single BC-UR string with no fragmentation.
+    // Used for oracle config (ur:jade-updps) where the entire CBOR fits in one QR code.
+    // Matches the original JS oracle_qr.html bcur_encode_object which never fragments.
+    public static string EncodeSingleFrame(byte[] payload, string urType)
+    {
+        var withCrc = AppendCrc32(payload);
+        var body = Bytewords.EncodeMinimal(withCrc);
+        return $"ur:{urType}/{body}";
+    }
+
     // Encodes a raw payload into one or more BC-UR fragment strings.
     // Small payloads produce a single fragment; large payloads are split and CBOR-wrapped.
     public static string[] Encode(byte[] payload, string urType)

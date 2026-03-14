@@ -55,13 +55,13 @@
 
     void GenerateQr()
     {
-        // Build the CBOR update_pinserver message and encode as a single BC-UR QR frame
-        var cborBytes   = CborProtocol.BuildOracleConfig(_urlA, _urlB, KeyStorage.PublicKeyHex);
-        var urFragments = BcUr.Encode(cborBytes, "jade-updps");
+        // Build the CBOR update_pinserver message and encode as a single BC-UR QR frame.
+        // Oracle config must be a single frame — Jade's oracle scanner doesn't support multi-frame.
+        var cborBytes = CborProtocol.BuildOracleConfig(_urlA, _urlB, KeyStorage.PublicKeyHex);
+        var urString = BcUr.EncodeSingleFrame(cborBytes, "jade-updps");
 
-        // Oracle config should always fit in a single QR frame; take the first fragment
         using var qrGenerator = new QRCodeGenerator();
-        var qrData   = qrGenerator.CreateQrCode(urFragments[0].ToUpper(), QRCodeGenerator.ECCLevel.L);
+        var qrData = qrGenerator.CreateQrCode(urString.ToUpper(), QRCodeGenerator.ECCLevel.L);
         using var qrCode = new PngByteQRCode(qrData);
         var pngBytes = qrCode.GetGraphic(6);
         _qrBase64    = Convert.ToBase64String(pngBytes);

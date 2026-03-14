@@ -35,6 +35,7 @@ public class CborProtocolTests
         Assert.Equal("001", decoded["id"].AsString());
         Assert.Equal("update_pinserver", decoded["method"].AsString());
         Assert.Equal("http://server:4443", decoded["params"]["urlA"].AsString());
-        Assert.Equal("02abcdef1234567890", decoded["params"]["pubkey"].AsString());
+        // pubkey is encoded as CBOR bytes, not text string
+        Assert.Equal(Convert.FromHexString("02abcdef1234567890"), decoded["params"]["pubkey"].GetByteString());
     }
 }

@@ -50,15 +50,23 @@ public static class CborProtocol
     // Builds a CBOR-encoded oracle configuration update message for Jade.
     // Jade expects: { "id": "001", "method": "update_pinserver", "params": { urlA, urlB, pubkey } }
     // urlB may be empty string if only one pinserver URL is configured.
-    public static byte[] BuildOracleConfig(string urlA, string urlB, string pubkeyHex) =>
-        CBORObject.NewMap()
+    // pubkey must be CBOR bytes (not text string) — Jade expects the raw 33-byte compressed key.
+    // Uses CBORObject.NewOrderedMap to preserve insertion order (Jade may not handle canonical sorting).
+    public static byte[] BuildOracleConfig(string urlA, string urlB, string pubkeyHex)
+    {
+        var pubkeyBytes = Convert.FromHexString(pubkeyHex);
+
+        var paramsMap = CBORObject.NewOrderedMap()
+            .Add("urlA", urlA)
+            .Add("urlB", urlB)
+            .Add("pubkey", pubkeyBytes);
+
+        return CBORObject.NewOrderedMap()
             .Add("id", "001")
             .Add("method", "update_pinserver")
-            .Add("params", CBORObject.NewMap()
-                .Add("urlA", urlA)
-                .Add("urlB", urlB)
-                .Add("pubkey", pubkeyHex))
+            .Add("params", paramsMap)
             .EncodeToBytes();
+    }
 
     // Constructs a synthetic PIN request CBOR blob for testing purposes.
     // Mirrors the exact structure Jade sends over BLE so tests can exercise the real parse path.

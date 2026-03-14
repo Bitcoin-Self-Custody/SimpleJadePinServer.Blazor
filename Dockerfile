@@ -18,9 +18,9 @@ COPY src/SimpleJadePinServer.Blazor.Services/SimpleJadePinServer.Blazor.Services
 COPY src/SimpleJadePinServer.Blazor.Tests/SimpleJadePinServer.Blazor.Tests.csproj src/SimpleJadePinServer.Blazor.Tests/
 RUN dotnet restore SimpleJadePinServer.Blazor.slnx
 
-# Copy all source and run tests
+# Copy all source (tests run in the CI workflow before docker build, not here —
+# QEMU arm64 emulation is too slow for the vstest connection timeout)
 COPY src/ src/
-RUN dotnet test SimpleJadePinServer.Blazor.slnx --no-restore -v m
 
 # Publish the web app
 RUN dotnet publish src/SimpleJadePinServer.Blazor/SimpleJadePinServer.Blazor.csproj \

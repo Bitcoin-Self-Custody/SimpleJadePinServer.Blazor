@@ -25,15 +25,25 @@ On first run, a server keypair is generated in `key_data/server_keys/`.
 
 ## Running with Docker
 
-Build and run the container using .NET's built-in container support:
+### Pre-built image from GitHub Container Registry
+
+```console
+docker run -d \
+  -p 4443:8080 \
+  -v jade-pin-keys:/app/key_data \
+  --name simplejadepinserver-blazor \
+  ghcr.io/bitcoin-self-custody/simplejadepinserver.blazor:latest
+```
+
+### Build locally (no Dockerfile needed)
+
+Uses .NET's native container support via the SDK:
 
 ```console
 dotnet publish src/SimpleJadePinServer.Blazor/SimpleJadePinServer.Blazor.csproj \
-  --os linux --arch x64 /t:PublishContainer \
+  -c Release /t:PublishContainer \
   -p ContainerImageName=simplejadepinserver-blazor
-```
 
-```console
 docker run -d \
   -p 4443:8080 \
   -v jade-pin-keys:/app/key_data \

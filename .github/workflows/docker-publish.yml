@@ -1,0 +1,92 @@
+# Build and push Docker image to GitHub Container Registry (ghcr.io)
+# using .NET's native container support (dotnet publish /t:PublishContainer).
+# No Dockerfile needed — the SDK builds the container image directly from the csproj.
+#
+# Triggers:
+#   - Push to main branch (publishes :latest)
+#   - Tags matching v*.*.* (publishes versioned tags like :1.0.0)
+#   - Manual dispatch via workflow_dispatch
+#
+# The image is published as:
+#   ghcr.io/bitcoin-self-custody/simplejadepinserver.blazor
+
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+# Write packages permission is needed to push to ghcr.io
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: bitcoin-self-custody/simplejadepinserver.blazor
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Check out the repository
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Install .NET SDK — required for dotnet publish /t:PublishContainer
+      - name: Set up .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      # Authenticate to ghcr.io so dotnet publish can push the image
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Run tests before building the container image
+      - name: Run tests
+        run: dotnet test SimpleJadePinServer.Blazor.slnx -v m
+
+      # Determine the image tag(s) based on the git ref:
+      #   - Push to main → :latest
+      #   - Tag v1.2.3  → :1.2.3 and :latest
+      #   - Manual       → :latest
+      - name: Determine image tags
+        id: tags
+        run: |
+          # Always include :latest
+          TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+
+          # If this is a version tag (v1.2.3), also tag with the version number
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"  # strip leading 'v'
+            TAGS="$TAGS;${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
+          fi
+
+          # Also tag with the short SHA for traceability
+          SHORT_SHA="${{ github.sha }}"
+          SHORT_SHA="${SHORT_SHA:0:7}"
+          TAGS="$TAGS;${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHORT_SHA}"
+
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+
+      # Build and push using .NET's native container support.
+      # The csproj has <EnableSdkContainerSupport>true</EnableSdkContainerSupport>
+      # which enables the /t:PublishContainer target.
+      # ContainerImageTags accepts semicolon-separated tags.
+      - name: Publish container image to ghcr.io
+        run: |
+          dotnet publish src/SimpleJadePinServer.Blazor/SimpleJadePinServer.Blazor.csproj \
+            -c Release \
+            /t:PublishContainer \
+            -p ContainerRegistry=${{ env.REGISTRY }} \
+            -p ContainerRepository=${{ env.IMAGE_NAME }} \
+            -p ContainerImageTags="${{ steps.tags.outputs.tags }}"

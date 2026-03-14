@@ -7,25 +7,7 @@ This is a self-hosted blind PIN oracle for the [Blockstream Jade](https://blocks
 > [!NOTE]
 > This is a **clean-slate reimplementation** — PIN file storage is not compatible with the Python version. If you switch from the Python server, your Jade will need to be re-paired.
 
-## Prerequisites
-
-- [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) or later
-- A modern web browser with camera access (for QR scanning)
-
-## Running with .NET
-
-```console
-cd src/SimpleJadePinServer.Blazor
-dotnet run
-```
-
-The web interface will be available at http://localhost:5271
-
-On first run, a server keypair is generated in `key_data/server_keys/`.
-
 ## Running with Docker
-
-### Docker Compose (recommended)
 
 Create a `docker-compose.yml` (or use the [one included in this repo](docker-compose.yml)):
 
@@ -40,16 +22,27 @@ services:
     restart: unless-stopped
 ```
 
-Then run:
-
 ```console
 docker compose up -d
 ```
 
 The web interface will be available at http://localhost:4443
 
+On first run, a server keypair is automatically generated in `key_data/server_keys/`.
+
 > [!TIP]
 > The container runs without TLS. Use a reverse proxy like Caddy or NGINX if you need HTTPS for non-localhost access (required by browsers for camera permissions).
+
+## Running with .NET (alternative)
+
+Requires [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) or later.
+
+```console
+cd src/SimpleJadePinServer.Blazor
+dotnet run
+```
+
+The web interface will be available at http://localhost:5271
 
 ## Pairing your Jade
 

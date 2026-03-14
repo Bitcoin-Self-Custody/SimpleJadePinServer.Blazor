@@ -1,0 +1,6 @@
+@* Routes wires the Blazor router to use MainLayout as the default shell for all pages *@
+<Router AppAssembly="typeof(Program).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
+    </Found>
+</Router>

@@ -1,0 +1,243 @@
+@page "/"
+@using SimpleJadePinServer.Blazor.Crypto
+@using SimpleJadePinServer.Blazor.Services
+@using QRCoder
+@inject PinCryptoService CryptoService
+@inject IJSRuntime JS
+@implements IDisposable
+
+@* Two-step QR Pin Unlock flow:
+   Step 1 — Scan the QR code(s) Jade displays after you enter your PIN.
+   Step 2 — Display QR code(s) back to Jade so it can unlock.
+*@
+
+<div class="main-layout">
+    <div class="unlock-section">
+        <div class="card">
+            <h3>QR Pin Unlock</h3>
+
+            @* ── Step 1: Scan PIN Request from Jade ────────────────────────── *@
+            <div class="step @(_step >= 1 ? "active" : "inactive")" id="step1">
+                <div class="step-number">1</div>
+                <div class="step-title">Step 1: Scan PIN Request</div>
+                <div class="step-description">Enter your PIN on Jade, then click below to scan the QR codes</div>
+
+                @if (!_scanning && _step == 1)
+                {
+                    <button class="btn" @onclick="StartScanning">Start Step 1</button>
+                }
+
+                @* Camera preview is rendered by html5-qrcode into this div *@
+                <div id="qrreader1" style="display: @(_scanning ? "block" : "none");"></div>
+
+                <div class="status status-info">
+                    <strong>Status:</strong> @_statusMessage
+                </div>
+            </div>
+
+            @* ── Step 2: Display PIN Reply QR to Jade ──────────────────────── *@
+            <div class="step @(_step >= 2 ? "active" : "inactive")" id="step2">
+                <div class="step-number">2</div>
+                <div class="step-title">Step 2: Scan PIN Reply</div>
+                <div class="step-description">Scan these QR codes with your Jade device</div>
+
+                @if (_step == 2 && !_processing)
+                {
+                    <button class="btn" @onclick="ProcessAndDisplay">Start Step 2</button>
+                }
+
+                <div class="status status-info">
+                    <strong>Status:</strong> @_step2Status
+                </div>
+
+                @* QR image cycles through frames if the response requires multiple codes *@
+                @if (_responseQrFrames is not null)
+                {
+                    <div class="qr-container">
+                        <img src="data:image/png;base64,@_currentQrBase64" alt="QR Response" style="max-width:280px;" />
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    // ── State ─────────────────────────────────────────────────────────────────
+
+    int _step = 1;
+    bool _scanning;
+    bool _processing;
+    string _statusMessage = "Ready to begin...";
+    string _step2Status  = "Waiting for Step 1...";
+    string? _currentQrBase64;
+
+    // Fragment accumulator: null entries = not yet scanned, filled in as each code is scanned
+    string?[]? _fragments;
+    int _totalFragments;
+    string[]? _completedFragments;
+
+    // Response QR display state
+    string[]? _responseQrFrames;
+    int _currentFrameIndex;
+    System.Threading.Timer? _cycleTimer;
+
+    // JS interop handle — must be disposed when the component is torn down
+    DotNetObjectReference<PinUnlock>? _dotNetRef;
+
+    // Parsed from the scanned PIN request
+    string? _pinFunc;       // "set_pin" or "get_pin"
+    byte[]? _requestData;   // raw encrypted bytes from Jade
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
+
+    protected override void OnInitialized() =>
+        _dotNetRef = DotNetObjectReference.Create(this);
+
+    // ── Step 1: Camera scanning ───────────────────────────────────────────────
+
+    async Task StartScanning()
+    {
+        _scanning = true;
+        _statusMessage = "Camera starting...";
+        _fragments = null;
+        StateHasChanged();
+
+        // Hand off to JS — scanner will call OnQrScanned for every successful read
+        await JS.InvokeVoidAsync("QrInterop.startScanning", "qrreader1", _dotNetRef);
+        _statusMessage = "Ready to scan QR codes from Jade...";
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Called from JS each time a QR code is successfully decoded by the camera.
+    /// Accumulates multi-fragment BC-UR codes until all pieces are collected.
+    /// </summary>
+    [JSInvokable]
+    public async Task OnQrScanned(string result)
+    {
+        // BC-UR format: "ur:jade-pin[/<seq>-<total>]/<bytewords>"
+        var parts = result.Split('/');
+        if (!parts[0].Equals("ur:jade-pin", StringComparison.OrdinalIgnoreCase))
+            return; // Not a Jade PIN QR — ignore
+
+        if (parts.Length == 3)
+        {
+            // Multi-fragment: ur:jade-pin/<seq>-<total>/<bytewords>
+            var seqParts = parts[1].Split('-');
+            var seq   = int.Parse(seqParts[0]);
+            var total = int.Parse(seqParts[1]);
+
+            _fragments ??= new string?[total];
+            _totalFragments = total;
+            _fragments[seq - 1] = result; // store in 0-based slot
+
+            var scanned = _fragments.Count(f => f is not null);
+            _statusMessage = $"Scanned {scanned}/{total} codes...";
+
+            if (_fragments.All(f => f is not null))
+            {
+                _completedFragments = _fragments.Select(f => f!).ToArray();
+                await FinishScanning();
+            }
+        }
+        else if (parts.Length == 2)
+        {
+            // Single-fragment: ur:jade-pin/<bytewords>
+            _completedFragments = [result];
+            await FinishScanning();
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    async Task FinishScanning()
+    {
+        await JS.InvokeVoidAsync("QrInterop.stopScanning");
+        _scanning = false;
+
+        // Decode BC-UR to raw CBOR bytes, then parse the Jade PIN request envelope
+        var cborBytes   = BcUr.Decode(_completedFragments!);
+        var parseResult = CborProtocol.ParsePinRequest(cborBytes);
+
+        if (parseResult.IsFailure)
+        {
+            _statusMessage = $"Error: {parseResult.Error}";
+            return;
+        }
+
+        var request  = parseResult.Value;
+        _requestData = request.EncryptedData;
+
+        // Determine operation from the URL path in the request
+        _pinFunc = request.Urls.Any(u => u.EndsWith("set_pin")) ? "set_pin" : "get_pin";
+
+        _statusMessage = "PIN request received!";
+        _step2Status   = "Ready to display QR codes";
+        _step = 2;
+    }
+
+    // ── Step 2: Crypto + QR display ───────────────────────────────────────────
+
+    async Task ProcessAndDisplay()
+    {
+        _processing = true;
+        _step2Status = "Generating QR codes...";
+        StateHasChanged();
+
+        // Run the appropriate PIN oracle operation
+        var result = _pinFunc == "set_pin"
+            ? CryptoService.SetPin(_requestData!)
+            : CryptoService.GetPin(_requestData!);
+
+        if (result.IsFailure)
+        {
+            _step2Status = $"Error: {result.Error}";
+            _processing  = false;
+            return;
+        }
+
+        // Encode response: base64 bytes → CBOR envelope → BC-UR → QR images
+        var base64Response  = Convert.ToBase64String(result.Value);
+        var responseCbor    = CborProtocol.BuildPinResponse(base64Response);
+        var urFragments     = BcUr.Encode(responseCbor, "jade-pin");
+
+        _responseQrFrames  = urFragments.Select(GenerateQrBase64).ToArray();
+        _currentFrameIndex = 0;
+        _currentQrBase64   = _responseQrFrames[0];
+        _step2Status       = "Displaying QR codes for Jade to scan...";
+
+        // If there are multiple frames, cycle through them automatically every 1.5 s
+        if (_responseQrFrames.Length > 1)
+        {
+            _cycleTimer = new System.Threading.Timer(async _ =>
+            {
+                _currentFrameIndex = (_currentFrameIndex + 1) % _responseQrFrames.Length;
+                _currentQrBase64   = _responseQrFrames[_currentFrameIndex];
+                await InvokeAsync(StateHasChanged);
+            }, null, 1500, 1500);
+        }
+
+        _processing = false;
+        StateHasChanged();
+    }
+
+    /// <summary>Renders a single BC-UR string as a PNG QR code and returns it as a base64 string.</summary>
+    static string GenerateQrBase64(string data)
+    {
+        // QRCoder: use uppercase input (BC-UR is case-insensitive; uppercase is standard) and low ECC
+        using var qrGenerator = new QRCodeGenerator();
+        var qrData  = qrGenerator.CreateQrCode(data.ToUpper(), QRCodeGenerator.ECCLevel.L);
+        using var qrCode = new PngByteQRCode(qrData);
+        var pngBytes = qrCode.GetGraphic(6); // 6 px per module → ~280×280 px at typical densities
+        return Convert.ToBase64String(pngBytes);
+    }
+
+    // ── Cleanup ───────────────────────────────────────────────────────────────
+
+    public void Dispose()
+    {
+        _cycleTimer?.Dispose();
+        _dotNetRef?.Dispose();
+    }
+}

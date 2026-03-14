@@ -1,0 +1,69 @@
+@page "/oracle"
+@using SimpleJadePinServer.Blazor.Crypto
+@using SimpleJadePinServer.Blazor.Services
+@using QRCoder
+@inject KeyStorageService KeyStorage
+@inject NavigationManager Nav
+
+@* Oracle Setup: generates a CBOR/BC-UR QR code the user scans with Jade to pair it
+   with this server.  Jade stores the server URL and public key in its own config. *@
+
+<div class="card">
+    <h3>Oracle QR Code Setup</h3>
+    <p>Generate a QR code to pair your Jade hardware wallet with this PIN server.</p>
+
+    @* Primary URL — defaults to this server's base URI so the user rarely needs to change it *@
+    <div class="form-group">
+        <label>Primary URL (urlA):</label>
+        <input type="text" @bind="_urlA" placeholder="http://your-server:4443" class="form-control" />
+    </div>
+
+    @* Optional fallback URL *@
+    <div class="form-group">
+        <label>Backup URL (urlB, optional):</label>
+        <input type="text" @bind="_urlB" placeholder="" class="form-control" />
+    </div>
+
+    @* Read-only display of the server's public key (derived from the loaded/generated keypair) *@
+    <div class="form-group">
+        <label>Server Public Key:</label>
+        <input type="text" value="@KeyStorage.PublicKeyHex" readonly class="form-control" />
+    </div>
+
+    <button class="btn" @onclick="GenerateQr">Generate Oracle QR Code</button>
+
+    @if (_qrBase64 is not null)
+    {
+        <div class="qr-container" style="margin-top: 1rem;">
+            <img src="data:image/png;base64,@_qrBase64" alt="Oracle QR" style="max-width:280px;" />
+        </div>
+        <p class="step-description">Scan this QR code with your Jade to configure it to use this PIN server.</p>
+    }
+</div>
+
+@code {
+    // URL fields — urlA pre-populated with this server's base URI for convenience
+    string _urlA = "";
+    string _urlB = "";
+
+    // Generated QR image as base64 PNG; null until the user clicks Generate
+    string? _qrBase64;
+
+    protected override void OnInitialized() =>
+        // Strip trailing slash from the base URI so URLs are well-formed when Jade appends paths
+        _urlA = Nav.BaseUri.TrimEnd('/');
+
+    void GenerateQr()
+    {
+        // Build the CBOR update_pinserver message and encode as a single BC-UR QR frame
+        var cborBytes   = CborProtocol.BuildOracleConfig(_urlA, _urlB, KeyStorage.PublicKeyHex);
+        var urFragments = BcUr.Encode(cborBytes, "jade-updps");
+
+        // Oracle config should always fit in a single QR frame; take the first fragment
+        using var qrGenerator = new QRCodeGenerator();
+        var qrData   = qrGenerator.CreateQrCode(urFragments[0].ToUpper(), QRCodeGenerator.ECCLevel.L);
+        using var qrCode = new PngByteQRCode(qrData);
+        var pngBytes = qrCode.GetGraphic(6);
+        _qrBase64    = Convert.ToBase64String(pngBytes);
+    }
+}

@@ -51,11 +51,14 @@ public sealed class PinCryptoService
     /// Composite ECDH + AES-CBC operation matching wallycore's aes_cbc_with_ecdh_key.
     ///
     /// 1. ECDH: compute shared point = publicKey * privateKey, take x-coordinate (32 bytes)
-    /// 2. Key derivation: HMAC-SHA256(shared_x, contextLabel_bytes)
-    /// 3. AES-CBC encrypt or decrypt
+    /// 2. Key derivation: HMAC-SHA512(shared_x, contextLabel) → 64 bytes
+    ///    - First 32 bytes = AES-256 encryption key
+    ///    - Last 32 bytes = HMAC-SHA256 authentication key
+    /// 3. AES-CBC encrypt or decrypt with PKCS7 padding
+    /// 4. HMAC-SHA256 authentication over IV + ciphertext
     ///
-    /// When encrypting: caller provides IV, output = [IV (16 bytes)] [ciphertext]
-    /// When decrypting: IV is extracted from first 16 bytes of data
+    /// When encrypting: output = [IV (16 bytes)] [ciphertext] [HMAC (32 bytes)]
+    /// When decrypting: verify HMAC, extract IV from first 16 bytes, strip HMAC from end
     /// </summary>
     public static byte[] AesCbcWithEcdh(byte[] privateKey, byte[]? iv, byte[] data, byte[] publicKey,
         string contextLabel, bool encrypt)
@@ -65,29 +68,47 @@ public sealed class PinCryptoService
         var nbPubKey = new PubKey(publicKey);
         var sharedPubKey = nbPubKey.GetSharedPubkey(nbPrivKey);
 
-        // x-coordinate is bytes 1..33 of the compressed shared public key (skip 0x02/0x03 prefix)
-        var sharedX = sharedPubKey.ToBytes()[1..33];
+        // wallycore's wally_ecdh uses libsecp256k1's default ECDH hash function,
+        // which returns SHA256(compressed_shared_point) — NOT the raw x-coordinate.
+        // The compressed point is [0x02|0x03 prefix][32-byte x], totaling 33 bytes.
+        var ecdhSecret = SHA256.HashData(sharedPubKey.ToBytes());
 
-        // Derive AES key: HMAC-SHA256(shared_x, context_label)
+        // Derive 64 bytes via HMAC-SHA512(ecdh_secret, context_label) — matches wallycore
+        // First 32 bytes = AES encryption key, last 32 bytes = HMAC authentication key
         var contextBytes = System.Text.Encoding.UTF8.GetBytes(contextLabel);
-        var aesKey = ComputeHmacSha256(sharedX, contextBytes);
+        var keyMaterial = ComputeHmacSha512(ecdhSecret, contextBytes);
+        var aesKey = keyMaterial[..32];
+        var hmacKey = keyMaterial[32..];
 
         if (encrypt)
         {
             // IV must be provided for encryption
             ArgumentNullException.ThrowIfNull(iv);
             var ciphertext = AesCbcEncrypt(aesKey, iv, data);
-            // Output: [IV][ciphertext]
-            var output = new byte[iv.Length + ciphertext.Length];
-            iv.CopyTo(output, 0);
-            ciphertext.CopyTo(output, iv.Length);
+
+            // Output: [IV][ciphertext][HMAC-SHA256(hmacKey, IV + ciphertext)]
+            var ivAndCiphertext = new byte[iv.Length + ciphertext.Length];
+            iv.CopyTo(ivAndCiphertext, 0);
+            ciphertext.CopyTo(ivAndCiphertext, iv.Length);
+
+            var hmac = ComputeHmacSha256(hmacKey, ivAndCiphertext);
+            var output = new byte[ivAndCiphertext.Length + hmac.Length];
+            ivAndCiphertext.CopyTo(output, 0);
+            hmac.CopyTo(output, ivAndCiphertext.Length);
             return output;
         }
         else
         {
-            // For decryption: extract IV from first 16 bytes of data
-            var extractedIv = data[..16];
-            var ciphertext = data[16..];
+            // For decryption: last 32 bytes = HMAC tag, first 16 bytes = IV, middle = ciphertext
+            var hmacTag = data[^32..];
+            var ivAndCiphertext = data[..^32];
+            var expectedHmac = ComputeHmacSha256(hmacKey, ivAndCiphertext);
+
+            if (!CryptographicOperations.FixedTimeEquals(hmacTag, expectedHmac))
+                throw new CryptographicException("HMAC verification failed — data integrity check failed");
+
+            var extractedIv = ivAndCiphertext[..16];
+            var ciphertext = ivAndCiphertext[16..];
             return AesCbcDecrypt(aesKey, extractedIv, ciphertext);
         }
     }
@@ -127,6 +148,30 @@ public sealed class PinCryptoService
     {
         using var hmac = new HMACSHA256(key);
         return hmac.ComputeHash(data);
+    }
+
+    /// <summary>
+    /// HMAC-SHA512(key, data) — used by wallycore for deriving encryption + HMAC keys from ECDH shared secret.
+    /// Returns 64 bytes: first 32 = AES key, last 32 = HMAC key.
+    /// </summary>
+    public static byte[] ComputeHmacSha512(byte[] key, byte[] data)
+    {
+        using var hmac = new HMACSHA512(key);
+        return hmac.ComputeHash(data);
+    }
+
+    /// <summary>
+    /// BIP341 tagged hash: SHA256(SHA256(tag) || SHA256(tag) || data).
+    /// Used by BIP341 key tweaking to domain-separate the tweak from other uses of SHA256.
+    /// </summary>
+    static byte[] TaggedHash(string tag, byte[] data)
+    {
+        var tagHash = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(tag));
+        var preimage = new byte[tagHash.Length * 2 + data.Length];
+        tagHash.CopyTo(preimage, 0);
+        tagHash.CopyTo(preimage, tagHash.Length);
+        data.CopyTo(preimage, tagHash.Length * 2);
+        return SHA256.HashData(preimage);
     }
 
     // ── Instance orchestration methods ───────────────────────────────────────
@@ -332,11 +377,26 @@ public sealed class PinCryptoService
 
         // Call CreateXOnlyPubKey(out bool parity) to determine if we need to negate.
         // This method returns an ECXOnlyPubKey; we only care about the parity out-param.
+        // Also extract the x-only pubkey bytes for the tagged hash.
         var createXOnlyMethod = EcPrivKeyType.GetMethod("CreateXOnlyPubKey",
             [typeof(bool).MakeByRefType()])!;
         var args = new object?[] { false };
-        createXOnlyMethod.Invoke(ecPrivKey, args);
+        var xOnlyPubKey = createXOnlyMethod.Invoke(ecPrivKey, args)!;
         var parity = (bool)args[0]!;
+
+        // Extract x-only pubkey bytes (32 bytes) for the BIP341 tagged hash
+        var xOnlyPubKeyType = xOnlyPubKey.GetType();
+        var xWriteMethod = xOnlyPubKeyType.GetMethod("WriteToSpan", [typeof(Span<byte>)])!;
+        var xWriteDel = xWriteMethod.CreateDelegate<WriteToSpanDelegate>(xOnlyPubKey);
+        var xOnlyBytes = new byte[32];
+        xWriteDel(xOnlyBytes);
+
+        // BIP341 tagged hash: t = tagged_hash('TapTweak', xonly_pubkey || tweak)
+        // This domain-separates the tweak so TweakAdd(t) matches wallycore's behavior
+        var taggedData = new byte[32 + tweak.Length];
+        xOnlyBytes.CopyTo(taggedData, 0);
+        tweak.CopyTo(taggedData, 32);
+        var t = TaggedHash("TapTweak", taggedData);
 
         // If parity is true (odd y), negate the key first: negated = order - key
         if (parity)
@@ -347,10 +407,11 @@ public sealed class PinCryptoService
         }
 
         // Call TweakAdd via bound delegate (ReadOnlySpan<byte> can't be boxed for Invoke)
+        // Note: we add the tagged hash 't', NOT the raw 'tweak'
         var tweakAddMethod = EcPrivKeyType.GetMethod("TweakAdd",
             [typeof(ReadOnlySpan<byte>)])!;
         var tweakAddDel = tweakAddMethod.CreateDelegate<TweakAddDelegate>(ecPrivKey);
-        var tweakedKey = tweakAddDel(tweak);
+        var tweakedKey = tweakAddDel(t);
 
         // Call WriteToSpan via bound delegate to extract 32-byte raw private key
         var writeMethod = EcPrivKeyType.GetMethod("WriteToSpan", [typeof(Span<byte>)])!;

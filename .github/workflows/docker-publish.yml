@@ -54,39 +54,32 @@ jobs:
       - name: Run tests
         run: dotnet test SimpleJadePinServer.Blazor.slnx -v m
 
-      # Determine the image tag(s) based on the git ref:
-      #   - Push to main → :latest
-      #   - Tag v1.2.3  → :1.2.3 and :latest
-      #   - Manual       → :latest
+      # Determine image tag names based on git ref.
+      # ContainerImageTags expects just tag names (e.g., "latest;abc1234"), not full URLs.
+      #   - Push to main → latest + short SHA
+      #   - Tag v1.2.3   → 1.2.3 + latest + short SHA
       - name: Determine image tags
         id: tags
         run: |
-          # Always include :latest
-          TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          TAGS="latest;${SHORT_SHA}"
 
-          # If this is a version tag (v1.2.3), also tag with the version number
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            VERSION="${{ github.ref_name }}"
-            VERSION="${VERSION#v}"  # strip leading 'v'
-            TAGS="$TAGS;${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
+          # If this is a version tag (v1.2.3), also add the version number
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            TAGS="${VERSION};${TAGS}"
           fi
 
-          # Also tag with the short SHA for traceability
-          SHORT_SHA="${{ github.sha }}"
-          SHORT_SHA="${SHORT_SHA:0:7}"
-          TAGS="$TAGS;${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHORT_SHA}"
-
-          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+          echo "tags=${TAGS}" >> "${GITHUB_OUTPUT}"
 
       # Build and push using .NET's native container support.
       # The csproj has <EnableSdkContainerSupport>true</EnableSdkContainerSupport>
       # which enables the /t:PublishContainer target.
-      # ContainerImageTags accepts semicolon-separated tags.
       - name: Publish container image to ghcr.io
         run: |
           dotnet publish src/SimpleJadePinServer.Blazor/SimpleJadePinServer.Blazor.csproj \
             -c Release \
             /t:PublishContainer \
-            -p ContainerRegistry=${{ env.REGISTRY }} \
-            -p ContainerRepository=${{ env.IMAGE_NAME }} \
-            -p ContainerImageTags="${{ steps.tags.outputs.tags }}"
+            "-p:ContainerRegistry=${{ env.REGISTRY }}" \
+            "-p:ContainerRepository=${{ env.IMAGE_NAME }}" \
+            "-p:ContainerImageTags=${{ steps.tags.outputs.tags }}"

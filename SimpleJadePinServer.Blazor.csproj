@@ -7,6 +7,12 @@
     <EnableSdkContainerSupport>true</EnableSdkContainerSupport>
   </PropertyGroup>
 
+  <!-- Exclude test project files from the main project's implicit glob so that xunit/test
+       references don't bleed into the main Blazor compilation. -->
+  <ItemGroup>
+    <Compile Remove="tests/**/*.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="CSharpFunctionalExtensions" Version="3.7.0" />
     <PackageReference Include="NBitcoin" Version="9.0.5" />

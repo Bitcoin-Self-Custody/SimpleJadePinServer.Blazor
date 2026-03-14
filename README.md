@@ -25,7 +25,15 @@ On first run, a server keypair is generated in `key_data/server_keys/`.
 
 ## Running with Docker
 
-### Pre-built image from GitHub Container Registry
+### Docker Compose (recommended)
+
+```console
+docker compose up -d
+```
+
+This uses the pre-built image from GitHub Container Registry. The `key_data` directory is mounted for persistent storage of server keys and PIN files.
+
+### Docker run
 
 ```console
 docker run -d \

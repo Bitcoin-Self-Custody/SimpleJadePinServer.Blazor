@@ -1,9 +1,8 @@
-# Build and push Docker image to GitHub Container Registry (ghcr.io)
-# using .NET's native container support (dotnet publish /t:PublishContainer).
-# No Dockerfile needed — the SDK builds the container image directly from the csproj.
+# Build and push multi-arch Docker image to GitHub Container Registry (ghcr.io).
+# Builds for linux/amd64 and linux/arm64 (Raspberry Pi / Umbrel compatibility).
 #
 # Triggers:
-#   - Push to main branch (publishes :latest)
+#   - Push to main branch when src/ changes (publishes :latest)
 #   - Tags matching v*.*.* (publishes versioned tags like :1.0.0)
 #   - Manual dispatch via workflow_dispatch
 #
@@ -15,11 +14,10 @@ name: Build and Push Docker Image
 on:
   push:
     branches: [main]
-    paths: ["src/**"]
+    paths: ["src/**", "Dockerfile"]
     tags: ["v*.*.*"]
   workflow_dispatch:
 
-# Write packages permission is needed to push to ghcr.io
 permissions:
   contents: read
   packages: write
@@ -33,17 +31,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Check out the repository
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Install .NET SDK — required for dotnet publish /t:PublishContainer
-      - name: Set up .NET 9
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "9.0.x"
+      # QEMU enables arm64 emulation on the amd64 runner
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
-      # Authenticate to ghcr.io so dotnet publish can push the image
+      # Buildx supports multi-platform builds
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -51,42 +49,29 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Run tests before building the container image
-      - name: Run tests
-        run: dotnet test SimpleJadePinServer.Blazor.slnx -v m
+      # Determine tags:
+      #   main push  → :latest + :sha
+      #   v1.2.3 tag → :1.2.3 + :1.2 + :latest + :sha
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=
 
-      # Determine image tag names based on git ref.
-      # ContainerImageTags expects just tag names (e.g., "latest;abc1234"), not full URLs.
-      #   - Push to main → latest + short SHA
-      #   - Tag v1.2.3   → 1.2.3 + latest + short SHA
-      - name: Determine image tags
-        id: tags
-        run: |
-          SHORT_SHA="${GITHUB_SHA:0:7}"
-          TAGS="latest;${SHORT_SHA}"
-
-          # If this is a version tag (v1.2.3), also add the version number
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-            TAGS="${VERSION};${TAGS}"
-          fi
-
-          echo "tags=${TAGS}" >> "${GITHUB_OUTPUT}"
-
-      # Build and push using .NET's native container support.
-      # The csproj has <EnableSdkContainerSupport>true</EnableSdkContainerSupport>
-      # which enables the /t:PublishContainer target.
-      # Publish once per tag, since ContainerImageTags with semicolons
-      # gets misinterpreted by MSBuild's command-line parser.
-      - name: Publish container image to ghcr.io
-        run: |
-          IFS=';' read -ra TAG_ARRAY <<< "${{ steps.tags.outputs.tags }}"
-          for TAG in "${TAG_ARRAY[@]}"; do
-            echo "Publishing tag: ${TAG}"
-            dotnet publish src/SimpleJadePinServer.Blazor/SimpleJadePinServer.Blazor.csproj \
-              -c Release \
-              /t:PublishContainer \
-              "-p:ContainerRegistry=${{ env.REGISTRY }}" \
-              "-p:ContainerRepository=${{ env.IMAGE_NAME }}" \
-              "-p:ContainerImageTag=${TAG}"
-          done
+      # Build for amd64 + arm64 and push to ghcr.io
+      # Tests run inside the Dockerfile build stage
+      - name: Build and push multi-arch image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

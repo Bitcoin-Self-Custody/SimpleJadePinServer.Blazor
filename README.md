@@ -27,36 +27,23 @@ On first run, a server keypair is generated in `key_data/server_keys/`.
 
 ### Docker Compose (recommended)
 
+Create a `docker-compose.yml` (or use the one included in this repo):
+
+```yaml
+services:
+  simplejadepinserver:
+    image: ghcr.io/bitcoin-self-custody/simplejadepinserver.blazor:latest
+    ports:
+      - "4443:8080"
+    volumes:
+      - ./key_data:/app/key_data
+    restart: unless-stopped
+```
+
+Then run:
+
 ```console
 docker compose up -d
-```
-
-This uses the pre-built image from GitHub Container Registry. The `key_data` directory is mounted for persistent storage of server keys and PIN files.
-
-### Docker run
-
-```console
-docker run -d \
-  -p 4443:8080 \
-  -v jade-pin-keys:/app/key_data \
-  --name simplejadepinserver-blazor \
-  ghcr.io/bitcoin-self-custody/simplejadepinserver.blazor:latest
-```
-
-### Build locally (no Dockerfile needed)
-
-Uses .NET's native container support via the SDK:
-
-```console
-dotnet publish src/SimpleJadePinServer.Blazor/SimpleJadePinServer.Blazor.csproj \
-  -c Release /t:PublishContainer \
-  -p ContainerImageName=simplejadepinserver-blazor
-
-docker run -d \
-  -p 4443:8080 \
-  -v jade-pin-keys:/app/key_data \
-  --name simplejadepinserver-blazor \
-  simplejadepinserver-blazor
 ```
 
 The web interface will be available at http://localhost:4443

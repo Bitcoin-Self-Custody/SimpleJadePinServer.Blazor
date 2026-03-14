@@ -75,11 +75,17 @@ jobs:
       # Build and push using .NET's native container support.
       # The csproj has <EnableSdkContainerSupport>true</EnableSdkContainerSupport>
       # which enables the /t:PublishContainer target.
+      # Publish once per tag, since ContainerImageTags with semicolons
+      # gets misinterpreted by MSBuild's command-line parser.
       - name: Publish container image to ghcr.io
         run: |
-          dotnet publish src/SimpleJadePinServer.Blazor/SimpleJadePinServer.Blazor.csproj \
-            -c Release \
-            /t:PublishContainer \
-            "-p:ContainerRegistry=${{ env.REGISTRY }}" \
-            "-p:ContainerRepository=${{ env.IMAGE_NAME }}" \
-            "-p:ContainerImageTags=${{ steps.tags.outputs.tags }}"
+          IFS=';' read -ra TAG_ARRAY <<< "${{ steps.tags.outputs.tags }}"
+          for TAG in "${TAG_ARRAY[@]}"; do
+            echo "Publishing tag: ${TAG}"
+            dotnet publish src/SimpleJadePinServer.Blazor/SimpleJadePinServer.Blazor.csproj \
+              -c Release \
+              /t:PublishContainer \
+              "-p:ContainerRegistry=${{ env.REGISTRY }}" \
+              "-p:ContainerRepository=${{ env.IMAGE_NAME }}" \
+              "-p:ContainerImageTag=${TAG}"
+          done

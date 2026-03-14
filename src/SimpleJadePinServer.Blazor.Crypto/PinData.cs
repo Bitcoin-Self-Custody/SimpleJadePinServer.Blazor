@@ -1,4 +1,4 @@
-namespace SimpleJadePinServer.Blazor.Models;
+namespace SimpleJadePinServer.Blazor.Crypto;
 
 // Represents the decrypted contents of a .pin storage file.
 // Version 0x02 format (clean-slate, not compatible with Python server v0x01).

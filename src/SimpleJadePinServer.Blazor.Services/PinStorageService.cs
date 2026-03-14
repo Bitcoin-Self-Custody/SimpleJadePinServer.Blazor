@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 using CSharpFunctionalExtensions;
-using SimpleJadePinServer.Blazor.Models;
+using SimpleJadePinServer.Blazor.Crypto;
 
 namespace SimpleJadePinServer.Blazor.Services;
 

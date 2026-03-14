@@ -1,5 +1,4 @@
 using SimpleJadePinServer.Blazor.Crypto;
-using SimpleJadePinServer.Blazor.Models;
 
 namespace SimpleJadePinServer.Blazor.Tests.Crypto;
 

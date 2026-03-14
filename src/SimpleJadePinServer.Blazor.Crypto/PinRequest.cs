@@ -1,4 +1,4 @@
-namespace SimpleJadePinServer.Blazor.Models;
+namespace SimpleJadePinServer.Blazor.Crypto;
 
 // Parsed result of a BC-UR/CBOR PIN request from Jade.
 // The URL path determines whether this is a SetPin or GetPin operation.

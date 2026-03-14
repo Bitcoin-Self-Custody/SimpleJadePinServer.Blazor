@@ -2,7 +2,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using CSharpFunctionalExtensions;
 using NBitcoin;
-using SimpleJadePinServer.Blazor.Models;
+using SimpleJadePinServer.Blazor.Crypto;
 
 namespace SimpleJadePinServer.Blazor.Services;
 

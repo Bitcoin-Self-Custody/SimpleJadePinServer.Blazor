@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SimpleJadePinServer.Blazor/SimpleJadePinServer.Blazor.csproj" />
+    <Project Path="src/SimpleJadePinServer.Blazor.Crypto/SimpleJadePinServer.Blazor.Crypto.csproj" />
+    <Project Path="src/SimpleJadePinServer.Blazor.Services/SimpleJadePinServer.Blazor.Services.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="src/SimpleJadePinServer.Blazor.Tests/SimpleJadePinServer.Blazor.Tests.csproj" />
+  </Folder>
+</Solution>

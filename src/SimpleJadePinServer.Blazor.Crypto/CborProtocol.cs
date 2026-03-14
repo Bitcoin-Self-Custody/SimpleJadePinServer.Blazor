@@ -1,6 +1,6 @@
 using CSharpFunctionalExtensions;
 using PeterO.Cbor;
-using SimpleJadePinServer.Blazor.Models;
+using SimpleJadePinServer.Blazor.Crypto;
 
 namespace SimpleJadePinServer.Blazor.Crypto;
 

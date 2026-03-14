@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
@@ -19,7 +19,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\SimpleJadePinServer.Blazor.csproj" />
+    <ProjectReference Include="..\SimpleJadePinServer.Blazor.Crypto\SimpleJadePinServer.Blazor.Crypto.csproj" />
+    <ProjectReference Include="..\SimpleJadePinServer.Blazor.Services\SimpleJadePinServer.Blazor.Services.csproj" />
   </ItemGroup>
 
 </Project>

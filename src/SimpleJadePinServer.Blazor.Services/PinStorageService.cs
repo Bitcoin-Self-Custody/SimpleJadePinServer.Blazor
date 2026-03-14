@@ -23,20 +23,14 @@ namespace SimpleJadePinServer.Blazor.Services;
 //
 // AES key for encryption  = HMAC-SHA256(aesPinData, pinPubkey)       [32 bytes]
 // HMAC key for auth       = HMAC-SHA256(aesPinData, pinPubkeyHash)   [32 bytes]
-public sealed class PinStorageService
+public sealed class PinStorageService(string basePath, byte[] aesPinData)
 {
     const byte Version       = 0x02;
     const int  PlaintextLength = 32 + 32 + 1 + 4; // 69 bytes
 
-    readonly string _pinsPath;
-    readonly byte[] _aesPinData;
+    readonly string _pinsPath = Path.Combine(basePath, "pins");
 
-    public PinStorageService(string basePath, byte[] aesPinData)
-    {
-        // PIN files live in a "pins" sub-directory of the configured base path.
-        _pinsPath   = Path.Combine(basePath, "pins");
-        _aesPinData = aesPinData;
-    }
+    // PIN files live in a "pins" sub-directory of the configured base path.
 
     // Each PIN file is named after the lowercase hex of sha256(pinPubkey).
     string GetFilePath(byte[] pinPubkeyHash) =>
@@ -54,8 +48,8 @@ public sealed class PinStorageService
         Directory.CreateDirectory(_pinsPath);
 
         // Derive per-client keys from the server's global AES-pin-data secret.
-        var storageAesKey = HmacSha256(_aesPinData, pinPubkey);      // encrypts payload
-        var pinAuthKey    = HmacSha256(_aesPinData, pinPubkeyHash);  // authenticates file
+        var storageAesKey = HmacSha256(aesPinData, pinPubkey);      // encrypts payload
+        var pinAuthKey    = HmacSha256(aesPinData, pinPubkeyHash);  // authenticates file
 
         // Assemble the 69-byte plaintext.
         var plaintext = new byte[PlaintextLength];
@@ -107,7 +101,7 @@ public sealed class PinStorageService
         var encrypted    = data[49..];
 
         // Re-derive auth key and verify HMAC in constant time to prevent timing attacks.
-        var pinAuthKey   = HmacSha256(_aesPinData, pinPubkeyHash);
+        var pinAuthKey   = HmacSha256(aesPinData, pinPubkeyHash);
         var authPayload  = new byte[1 + iv.Length + encrypted.Length];
         authPayload[0]   = Version;
         iv.CopyTo(authPayload, 1);
@@ -118,7 +112,7 @@ public sealed class PinStorageService
             return Result.Failure<PinData>("PIN file HMAC verification failed");
 
         // Decrypt payload.
-        var storageAesKey = HmacSha256(_aesPinData, pinPubkey);
+        var storageAesKey = HmacSha256(aesPinData, pinPubkey);
         var plaintext     = AesCbcDecrypt(storageAesKey, iv, encrypted);
 
         if (plaintext.Length != PlaintextLength)

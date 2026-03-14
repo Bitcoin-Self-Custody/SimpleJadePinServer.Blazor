@@ -12,12 +12,10 @@ namespace SimpleJadePinServer.Blazor.Services;
 //     used downstream by PinStorageService to encrypt per-client PIN files.
 //
 // Uses NBitcoin.Key (public API) rather than NBitcoin.Secp256k1.ECPrivKey (internal).
-public sealed class KeyStorageService
+public sealed class KeyStorageService(string basePath)
 {
-    readonly string _basePath;
-
     // Paths derived from base path
-    string ServerKeysPath => Path.Combine(_basePath, "server_keys");
+    string ServerKeysPath => Path.Combine(basePath, "server_keys");
     string PrivateKeyPath => Path.Combine(ServerKeysPath, "private.key");
     string PublicKeyPath  => Path.Combine(ServerKeysPath, "public.key");
 
@@ -31,8 +29,6 @@ public sealed class KeyStorageService
 
     // Lowercase hex of the compressed public key — used as a handshake identity in the protocol.
     public string PublicKeyHex => Convert.ToHexString(_publicKey).ToLower();
-
-    public KeyStorageService(string basePath) => _basePath = basePath;
 
     /// <summary>
     /// Loads or generates the EC keypair, then derives AesPinData.

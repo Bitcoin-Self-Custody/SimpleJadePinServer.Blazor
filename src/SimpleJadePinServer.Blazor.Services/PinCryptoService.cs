@@ -13,17 +13,8 @@ namespace SimpleJadePinServer.Blazor.Services;
 //
 // Static methods handle pure crypto (testable in isolation).
 // Instance methods orchestrate full set_pin / get_pin flows using injected services.
-public sealed class PinCryptoService
+public sealed class PinCryptoService(KeyStorageService keyStorage, PinStorageService pinStorage)
 {
-    readonly KeyStorageService _keyStorage;
-    readonly PinStorageService _pinStorage;
-
-    public PinCryptoService(KeyStorageService keyStorage, PinStorageService pinStorage)
-    {
-        _keyStorage = keyStorage;
-        _pinStorage = pinStorage;
-    }
-
     // ── Static crypto primitives ─────────────────────────────────────────────
 
     /// <summary>
@@ -199,7 +190,7 @@ public sealed class PinCryptoService
         var encryptedData = data[37..];
 
         // Step 2: Derive session key and decrypt
-        var sessionKey = DeriveSessionKey(_keyStorage.PrivateKey.ToArray(), cke, replayCounter);
+        var sessionKey = DeriveSessionKey(keyStorage.PrivateKey.ToArray(), cke, replayCounter);
         var payload = AesCbcWithEcdh(sessionKey, null, encryptedData, cke, "blind_oracle_request", encrypt: false);
 
         // Step 3: Extract fields — set_pin payload is pin_secret(32) + entropy(32) + signature(65) = 129 bytes
@@ -221,9 +212,9 @@ public sealed class PinCryptoService
         var pinPubkeyHash = SHA256.HashData(pinPubkey);
 
         // Step 5: If PIN file already exists, enforce anti-replay
-        if (_pinStorage.Exists(pinPubkeyHash))
+        if (pinStorage.Exists(pinPubkeyHash))
         {
-            var existingResult = _pinStorage.Load(pinPubkeyHash, pinPubkey);
+            var existingResult = pinStorage.Load(pinPubkeyHash, pinPubkey);
             if (existingResult.IsSuccess)
             {
                 var clientCounter = BitConverter.ToUInt32(replayCounter, 0);
@@ -240,7 +231,7 @@ public sealed class PinCryptoService
         // Step 7: Save PIN file with replay counter reset to 0
         var hashPinSecret = SHA256.HashData(pinSecret);
         var replayBytes = new byte[4]; // 0x00000000
-        _pinStorage.Save(pinPubkeyHash, pinPubkey, new PinData(hashPinSecret, newKey, 0, replayBytes));
+        pinStorage.Save(pinPubkeyHash, pinPubkey, new PinData(hashPinSecret, newKey, 0, replayBytes));
 
         // Step 8: Blind oracle — derive response key
         var aesKey = ComputeHmacSha256(newKey, pinSecret);
@@ -275,7 +266,7 @@ public sealed class PinCryptoService
         var encryptedData = data[37..];
 
         // Step 2: Derive session key and decrypt
-        var sessionKey = DeriveSessionKey(_keyStorage.PrivateKey.ToArray(), cke, replayCounter);
+        var sessionKey = DeriveSessionKey(keyStorage.PrivateKey.ToArray(), cke, replayCounter);
         var payload = AesCbcWithEcdh(sessionKey, null, encryptedData, cke, "blind_oracle_request", encrypt: false);
 
         // Step 3: Extract fields — get_pin payload is pin_secret(32) + signature(65) = 97 bytes
@@ -297,7 +288,7 @@ public sealed class PinCryptoService
 
         // Steps 5-8: Load PIN file and determine the key to use
         byte[] savedKey;
-        var loadResult = _pinStorage.Load(pinPubkeyHash, pinPubkey);
+        var loadResult = pinStorage.Load(pinPubkeyHash, pinPubkey);
         if (loadResult.IsFailure)
         {
             // Step 8: File not found — return random key (Jade won't be able to decrypt)
@@ -318,7 +309,7 @@ public sealed class PinCryptoService
             if (CryptographicOperations.FixedTimeEquals(hashPinSecret, pinData.PinSecretHash))
             {
                 // Correct PIN: reset attempt counter, save new replay counter, use stored key
-                _pinStorage.Save(pinPubkeyHash, pinPubkey,
+                pinStorage.Save(pinPubkeyHash, pinPubkey,
                     new PinData(pinData.PinSecretHash, pinData.StorageKey, 0, replayCounter));
                 savedKey = pinData.StorageKey;
             }
@@ -328,12 +319,12 @@ public sealed class PinCryptoService
                 if (pinData.AttemptCounter >= 2)
                 {
                     // 3rd wrong attempt: delete the PIN file entirely
-                    _pinStorage.Delete(pinPubkeyHash);
+                    pinStorage.Delete(pinPubkeyHash);
                 }
                 else
                 {
                     // Increment attempt counter, save with current replay counter
-                    _pinStorage.Save(pinPubkeyHash, pinPubkey,
+                    pinStorage.Save(pinPubkeyHash, pinPubkey,
                         new PinData(pinData.PinSecretHash, pinData.StorageKey,
                             (byte)(pinData.AttemptCounter + 1), replayCounter));
                 }

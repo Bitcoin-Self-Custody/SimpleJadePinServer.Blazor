@@ -13,19 +13,14 @@ FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:9.0-alpine AS build
 ARG TARGETARCH
 WORKDIR /src
 
-# Copy project files and restore for the target architecture
-COPY SimpleJadePinServer.Blazor.slnx .
-COPY src/SimpleJadePinServer.Blazor/SimpleJadePinServer.Blazor.csproj src/SimpleJadePinServer.Blazor/
-COPY src/SimpleJadePinServer.Blazor.Crypto/SimpleJadePinServer.Blazor.Crypto.csproj src/SimpleJadePinServer.Blazor.Crypto/
-COPY src/SimpleJadePinServer.Blazor.Services/SimpleJadePinServer.Blazor.Services.csproj src/SimpleJadePinServer.Blazor.Services/
-RUN dotnet restore src/SimpleJadePinServer.Blazor/SimpleJadePinServer.Blazor.csproj -a $TARGETARCH
-
-# Copy source and publish for the target architecture
+# Copy all source files
 COPY src/SimpleJadePinServer.Blazor/ src/SimpleJadePinServer.Blazor/
 COPY src/SimpleJadePinServer.Blazor.Crypto/ src/SimpleJadePinServer.Blazor.Crypto/
 COPY src/SimpleJadePinServer.Blazor.Services/ src/SimpleJadePinServer.Blazor.Services/
+
+# Publish for the target architecture (restore + build + publish in one step)
 RUN dotnet publish src/SimpleJadePinServer.Blazor/SimpleJadePinServer.Blazor.csproj \
-    --no-restore -a $TARGETARCH -c Release -o /app/publish
+    -a $TARGETARCH -c Release -o /app/publish
 
 # ── Runtime stage (uses target platform's runtime image) ─────────────
 FROM mcr.microsoft.com/dotnet/aspnet:9.0-alpine AS runtime

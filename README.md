@@ -7,6 +7,17 @@ This is a self-hosted blind PIN oracle for the [Blockstream Jade](https://blocks
 > [!NOTE]
 > This is a **clean-slate reimplementation** — PIN file storage is not compatible with the Python version. If you switch from the Python server, your Jade will need to be re-paired.
 
+## Screenshots
+
+### QR Pin Unlock
+![QR Pin Unlock](docs/screenshots/pin-unlock.png)
+
+### Oracle QR Code Setup
+![Oracle QR Code Setup](docs/screenshots/oracle-setup.png)
+
+### Generated Oracle QR Code
+![Generated Oracle QR Code](docs/screenshots/oracle-qr-generated.png)
+
 ## Running with Docker
 
 Create a `docker-compose.yml` (or use the [one included in this repo](docker-compose.yml)):

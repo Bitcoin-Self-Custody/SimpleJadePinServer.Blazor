@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <rect width="256" height="256" rx="48" fill="#0d1117"/>
+  <rect x="16" y="16" width="224" height="224" rx="36" fill="#161b22" stroke="#30363d" stroke-width="2"/>
+  <!-- Shield shape representing security -->
+  <path d="M128 40 L200 72 V136 C200 180 168 212 128 224 C88 212 56 180 56 136 V72 Z" fill="#1a2332" stroke="#58a6ff" stroke-width="3"/>
+  <!-- QR code pattern inside shield -->
+  <rect x="88" y="88" width="20" height="20" fill="#58a6ff"/>
+  <rect x="112" y="88" width="8" height="8" fill="#58a6ff"/>
+  <rect x="148" y="88" width="20" height="20" fill="#58a6ff"/>
+  <rect x="88" y="112" width="8" height="8" fill="#58a6ff"/>
+  <rect x="120" y="112" width="16" height="16" fill="#58a6ff"/>
+  <rect x="148" y="112" width="8" height="8" fill="#58a6ff"/>
+  <rect x="88" y="148" width="20" height="20" fill="#58a6ff"/>
+  <rect x="112" y="148" width="8" height="8" fill="#58a6ff"/>
+  <rect x="132" y="148" width="8" height="8" fill="#58a6ff"/>
+  <rect x="148" y="148" width="20" height="20" fill="#58a6ff"/>
+  <!-- Lock icon at bottom of shield -->
+  <rect x="116" y="180" width="24" height="18" rx="3" fill="#58a6ff"/>
+  <path d="M122 180 V174 C122 170 124 168 128 168 C132 168 134 170 134 174 V180" stroke="#58a6ff" stroke-width="3" fill="none"/>
+  <circle cx="128" cy="189" r="3" fill="#0d1117"/>
+</svg>

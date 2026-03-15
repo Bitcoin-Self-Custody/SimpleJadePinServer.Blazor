@@ -10,12 +10,12 @@ This is a self-hosted blind PIN oracle for the [Blockstream Jade](https://blocks
 ## Screenshots
 
 ### QR Pin Unlock
-![Scanning Jade QR codes](images/jade_qr_scanning.png)
+<img src="images/jade_qr_scanning.png" alt="Scanning Jade QR codes" width="400">
 
-![Jade unlock demo](images/jade_unlock.gif)
+<img src="images/jade_unlock.gif" alt="Jade unlock demo" width="400">
 
 ### Oracle QR Code Setup
-![Oracle QR Code Setup](images/oracle_qr.png)
+<img src="images/oracle_qr.png" alt="Oracle QR Code Setup" width="400">
 
 ## Running with Docker
 
